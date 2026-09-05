@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube 英語学習プレイヤー</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #121212;
+      color: #fff;
+      margin: 0;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .container {
+      width: 100%;
+      max-width: 600px;
+    }
+    .input-group {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 15px;
+    }
+    input {
+      flex: 1;
+      padding: 10px;
+      font-size: 1rem;
+      background: #222;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 4px;
+    }
+    button {
+      padding: 10px 15px;
+      background: #ff0000;
+      color: #fff;
+      border: none;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #000;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    /* YouTube APIが生成するiframeを包む要素 */
+    #player {
+      width: 100%;
+      height: 100%;
+    }
+    .subtitles {
+      margin-top: 15px;
+      padding: 15px;
+      background: #1e1e1e;
+      border-radius: 8px;
+      text-align: center;
+      min-height: 80px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .en { font-size: 1.1rem; font-weight: bold; margin-bottom: 8px; }
+    .ja { font-size: 1rem; color: #ffeb3b; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h2>YouTube 二重字幕プレイヤー</h2>
+    
+    <!-- 入力欄 -->
+    <div class="input-group">
+      <input type="text" id="urlInput" placeholder="例: https://youtu.be/xxxx または ID" value="M7lc1UVf-VE">
+      <button onclick="changeVideo()">再生</button>
+    </div>
+
+    <!-- YouTubeプレイヤーエリア -->
+    <div class="video-wrapper">
+      <div id="player"></div>
+    </div>
+
+    <!-- 字幕表示エリア -->
+    <div class="subtitles">
+      <div class="en" id="enSub">再生を押すと字幕が同期します</div>
+      <div class="ja" id="jaSub">Subtitles will appear here</div>
+    </div>
+  </div>
+
+  <!-- YouTube Iframe APIの読み込み -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+
+  <script>
+    let player;
+    let timeCheckInterval;
+
+    // --- ① 字幕データ（「何秒から何秒まで、何のセリフか」のリスト） ---
+    // ※テスト動画「M7lc1UVf-VE」用のサンプルデータです
+    const subtitlesData = [
+      { start: 0,   end: 4,   en: "Welcome to YouTube Developers.", ja: "YouTubeデベロッパーへようこそ。" },
+      { start: 4,   end: 8,   en: "Today, we are going to talk about APIs.", ja: "今日はAPIについてお話します。" },
+      { start: 8,   end: 12,  en: "Let's dive right into the code.", ja: "早速コードを見ていきましょう。" },
+      { start: 12,  end: 20,  en: "You can build amazing applications easily.", ja: "素晴らしいアプリケーションを簡単に作ることができます。" }
+    ];
+
+    // ② YouTube APIの準備完了時に呼ばれるコールバック関数
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: 'M7lc1UVf-VE', // 初期表示動画
+        events: {
+          'onStateChange': onPlayerStateChange
+        }
+      });
+    }
+
+    // ③ プレイヤーの状態が変化したとき（再生・停止など）の処理
+    function onPlayerStateChange(event) {
+      // 再生中（YT.PlayerState.PLAYING = 1）になったら、定期的に現在時刻をチェックして字幕を切り替える
+      if (event.data === YT.PlayerState.PLAYING) {
+        if (timeCheckInterval) clearInterval(timeCheckInterval);
+        
+        timeCheckInterval = setInterval(() => {
+          if (player && player.getCurrentTime) {
+            const currentTime = player.getCurrentTime();
+            updateSubtitles(currentTime);
+          }
+        }, 200); // 0.2秒ごとに時間をチェック
+      } else {
+        // 停止や一時停止の時はインターバルを止めて負荷を減らす
+        if (timeCheckInterval) clearInterval(timeCheckInterval);
+      }
+    }
+
+    // ④ 現在の再生時間に合わせて字幕を書き換える関数
+    function updateSubtitles(currentTime) {
+      const enSubEl = document.getElementById('enSub');
+      const jaSubEl = document.getElementById('jaSub');
+
+      // 現在の秒数にヒットする字幕データを探す
+      const currentSub = subtitlesData.find(sub => currentTime >= sub.start && currentTime <= sub.end);
+
+      if (currentSub) {
+        enSubEl.textContent = currentSub.en;
+        jaSubEl.textContent = currentSub.ja;
+      } else {
+        // 該当する字幕がない区間
+        enSubEl.textContent = "";
+        jaSubEl.textContent = "";
+      }
+    }
+
+    // ⑤ ユーザーが入力したURLから動画を切り替える関数
+    function changeVideo() {
+      const input = document.getElementById('urlInput').value.trim();
+      let videoId = "";
+
+      if (!input) {
+        alert("URLを入力してください。");
+        return;
+      }
+
+      if (input.includes('youtu.be/')) {
+        videoId = input.split('youtu.be/')[1].split('?')[0];
+      } else if (input.includes('watch?v=')) {
+        videoId = input.split('watch?v=')[1].split('&')[0];
+      } else if (input.includes('embed/')) {
+        videoId = input.split('embed/')[1].split('?')[0];
+      } else {
+        videoId = input;
+      }
+
+      if (videoId && videoId.length >= 10) {
+        if (player && player.loadVideoById) {
+          player.loadVideoById(videoId);
+        }
+      } else {
+        alert("正しいYouTubeのURLまたは動画IDを入力してください。");
+      }
+    }
+  </script>
+</body>
+</html>
